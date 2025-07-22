@@ -23,10 +23,12 @@ contract Lottery {
 
     //Events
     event GameCreated(string _message, address owner, uint256 price, uint256 timeStamp);
-    event GameStarted(string message, uint256 timeStamp, uint256 deadLine);
+    event GameStarted(string _message, uint256 timeStamp, uint256 deadLine);
+    event TicketPurches(string _message, address indexed player, uint256 timeStamp);
+    event Refunded(string _message, address indexed player, uint256 timestamp);
 
     //Enum. Game statuses. 
-    enum GameStatus {INACTIVE, ACTIVE, PAUSED, FINISHED}
+    enum GameStatus {INACTIVE, ACTIVE, PAUSED, FINISHED, TERMINATED}
     GameStatus gameStatus;
 
     //Modifiers
@@ -49,6 +51,11 @@ contract Lottery {
 
      modifier gameIsPaused() {
         require(gameStatus == GameStatus.PAUSED, "Game is not PAUSED.");
+        _;
+    }
+
+    modifier gameIsTerminated() {
+        require(gameStatus == GameStatus.TERMINATED, "Game is not TERMINATED.");
         _;
     }
 
@@ -104,10 +111,15 @@ contract Lottery {
 
     function terminateGame() public onlyOwner {
         require(block.timestamp < deadLine, "Deadline is already passed.");
-        gameStatus = GameStatus.FINISHED;
+        gameStatus = GameStatus.TERMINATED;
     }
 
-    function buyTicket(uint256[] memory  yourNumbers) public payable  noReentrace gameIsActive {
+    function showBalance() public view returns (uint256) {
+        return address(this).balance;
+    }
+
+    function buyTicket(uint256[] memory  yourNumbers) external payable noReentrace gameIsActive {
+        //Check requirments 
         require(yourNumbers.length == numbersOfSlots, "Numbers shoud be equal to number of slots.");
         require(deadLine > block.timestamp, "Deadline has passed.");
         require(msg.sender != address(0));
@@ -115,6 +127,7 @@ contract Lottery {
         PlayerTickets storage player = players[msg.sender];
         require(player.numberOfTickets < 10, "You can buy up to 10 tickets");
 
+        //check if your numbers equal to win numbers
         if (!player.isWinner) {
             bool allNumbersMatch = true;
             for (uint256 i = 0; i < yourNumbers.length; i++) {
@@ -131,19 +144,32 @@ contract Lottery {
 
         player.ticketsNumbers.push(yourNumbers);
         player.numberOfTickets++;
-       
-        
+        emit TicketPurches("Ticket has been purchesd", msg.sender, block.timestamp);  
+    }
+
+    function showMyTickets() external view returns (uint256[][] memory) {
+        PlayerTickets storage player = players[msg.sender];
+        return player.ticketsNumbers;
+    }
+
+    function refund() public gameIsTerminated {
+        require(msg.sender != address(0), "Invalid address.");
+        uint256 myTickets = players[msg.sender].numberOfTickets;
+        players[msg.sender].numberOfTickets = 0;
+        (bool success, ) = msg.sender.call{value: myTickets*ticketPrice, gas: 10000}("");
+        if (!success) {
+            players[msg.sender].numberOfTickets = myTickets;
+            revert("Transfer failed");
+        } else {
+            emit Refunded("Your tickets are refunded.", msg.sender, block.timestamp);
+        }
     }
 
 
-
-
-
-
-
-
-
 }
+
+
+
 
 
 
