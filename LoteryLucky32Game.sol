@@ -95,7 +95,7 @@ contract LotteryLucky32 {
         require(msg.sender != address(0), "Invalid address.");
         require(bytes(_gameName).length > 0, "Name should not be empty.");
         require(bytes(_description).length > 0, "Description should not be empty.");
-        require(winNumber >= 1 && winNumber <= 32, "Win number should be betwen 1 and 32.");
+        require(_winNumber >= 1 && _winNumber <= 32, "Win number should be betwen 1 and 32.");
         require(_ownerPercent >= 1 && _ownerPercent <= 10, "Owner percent should be between 1 and 10.");
         require(_ticketPrice >= MIN_TICKET_PRICE && _ticketPrice <= MAX_TICKET_PRICE, "Ticket price should be 0.1 ETH and less 1 ETH (In clussive).");
         require(_deadLine >= 1 && _deadLine <= 32, "Deadline should be no less then 1 day and no more then 32 days.");
@@ -128,7 +128,7 @@ contract LotteryLucky32 {
         gameStatus = GameStatus.PAUSED;
         pausedOnce = true;
         pauseDeadLine = block.timestamp + (daysPaused * 1 days);
-        deadLine = deadLine + pauseDeadLine;
+        deadLine = deadLine + (daysPaused * 1 days);
         emit GameIsPaused("Game is paused", daysPaused, block.timestamp);
         emit GameDeadLineChange("Game deadline is extended", deadLine, block.timestamp);
         
@@ -222,9 +222,3 @@ contract LotteryLucky32 {
     }
 
 }
-
-
-
-
-
-
