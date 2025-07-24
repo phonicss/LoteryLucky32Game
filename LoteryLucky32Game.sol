@@ -14,6 +14,7 @@ contract LotteryLucky32 {
     bool private locked;
     bool private pausedOnce;
     uint256 public pauseDeadLine;
+    uint256 public ticketsSold;
     uint256 public MIN_TICKET_PRICE = 0.1 ether;
     uint256 public MAX_TICKET_PRICE = 1 ether;
 
@@ -151,7 +152,7 @@ contract LotteryLucky32 {
         gameStatus = GameStatus.TERMINATED;
     }
 
-    function showBalance() public view returns (uint256) {
+    function showBalance() external view returns (uint256) {
         return address(this).balance;
     }
 
@@ -174,6 +175,7 @@ contract LotteryLucky32 {
 
         player.myLuckyNumbers.push(myNumber);
         player.numberOfTickets++;
+        ticketsSold++;
         emit TicketPurches("Ticket has been purchesd.", msg.sender, block.timestamp);  
     }
 
@@ -182,7 +184,11 @@ contract LotteryLucky32 {
         return player.myLuckyNumbers;
     }
 
-    function refund() public gameIsTerminated onlyMember {
+    function ShowTicketsSold() external view returns (uint256) {
+        return ticketsSold;
+    }
+
+    function refund() external gameIsTerminated onlyMember {
         require(msg.sender != address(0), "Invalid address.");
         uint256 myTickets = players[msg.sender].numberOfTickets;
         players[msg.sender].numberOfTickets = 0;
@@ -195,7 +201,7 @@ contract LotteryLucky32 {
         }
     }
 
-    function finishGame() public onlyMember noReentrace {
+    function finishGame() external onlyMember noReentrace {
         require(block.timestamp > deadLine, "Deadline has not passed.");
         gameStatus = GameStatus.FINISHED;
         uint256 percentToOwner = (address(this).balance/100) * ownerPercent;
@@ -205,22 +211,17 @@ contract LotteryLucky32 {
         }
         uint256 percentToWinners = address(this).balance / winners.length;
         for (uint256 i = 0; i < winners.length; i++) {
-            if (winners[i] != address(0) && players[winners[i]].isWinner == false) {continue;}
+            if (winners[i] != address(0) || players[winners[i]].isWinner == false) {continue;}
             (bool success2, ) = winners[i].call{value: percentToWinners, gas: 10000}("");
             if (!success2) {
                 revert("Transfer failed");
             } else {
-                winners[i] = 0;
+                players[winners[i]].isWinner = false;
             }
         }
     }
 
 }
-
-
-
-
-
 
 
 
