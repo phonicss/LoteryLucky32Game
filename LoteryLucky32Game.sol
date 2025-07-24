@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity ^0.8.0;
 
+
+
 contract LotteryLucky32 {
 
     address public immutable owner;
     string public gameName;
     string public description;
     uint256 public ticketPrice;
-    uint256 private winNumber;
+    uint256 private secretNumber;
+    uint256 public winNumber;
     uint256 public ownerPercent;
     uint256 public howManyTicketsAllowed;
     uint256 public deadLine;
@@ -35,6 +38,7 @@ contract LotteryLucky32 {
     event GameDeadLineChange(string _message, uint256 newDeadLine, uint256 timeStamp);
     event TicketPurches(string _message, address indexed player, uint256 timeStamp);
     event Refunded(string _message, address indexed player, uint256 timestamp);
+    event RevealSecretNumber(string _message, uint256 secretNumber, uint256 timeStamp);
 
     //Enum. Game statuses. 
     enum GameStatus {INACTIVE, ACTIVE, PAUSED, FINISHED, TERMINATED}
@@ -86,7 +90,6 @@ contract LotteryLucky32 {
     constructor(
         string memory _gameName,
         string memory _description,
-        uint256 _winNumber,
         uint256 _ownerPercent,
         uint256 _howManyTicketsAllowed,
         uint256 _ticketPrice,
@@ -95,15 +98,20 @@ contract LotteryLucky32 {
         require(msg.sender != address(0), "Invalid address.");
         require(bytes(_gameName).length > 0, "Name should not be empty.");
         require(bytes(_description).length > 0, "Description should not be empty.");
-        require(_winNumber >= 1 && _winNumber <= 32, "Win number should be betwen 1 and 32.");
         require(_ownerPercent >= 1 && _ownerPercent <= 10, "Owner percent should be between 1 and 10.");
         require(_ticketPrice >= MIN_TICKET_PRICE && _ticketPrice <= MAX_TICKET_PRICE, "Ticket price should be 0.1 ETH and less 1 ETH (In clussive).");
         require(_deadLine >= 1 && _deadLine <= 32, "Deadline should be no less then 1 day and no more then 32 days.");
+
+        secretNumber = uint256(keccak256(abi.encodePacked(
+            block.difficulty,
+            block.timestamp,
+            block.prevrandao,
+            owner
+        )));
         
         owner = msg.sender;
         gameName = _gameName;
         description = _description;
-        winNumber = _winNumber;
         ownerPercent = _ownerPercent;
         howManyTicketsAllowed = _howManyTicketsAllowed;
         ticketPrice = _ticketPrice;
@@ -188,11 +196,16 @@ contract LotteryLucky32 {
         return ticketsSold;
     }
 
+    function revealWinNumber() internal returns (uint256) {
+    winNumber = (secretNumber % 32) + 1;
+    return winNumber;
+}
+
     function refund() external gameIsTerminated onlyMember {
         require(msg.sender != address(0), "Invalid address.");
         uint256 myTickets = players[msg.sender].numberOfTickets;
         players[msg.sender].numberOfTickets = 0;
-        (bool success, ) = msg.sender.call{value: myTickets*ticketPrice, gas: 10000}("");
+        (bool success, ) = msg.sender.call{value: myTickets*ticketPrice, gas: 50000}("");
         if (!success) {
             players[msg.sender].numberOfTickets = myTickets;
             revert("Transfer failed");
@@ -203,20 +216,22 @@ contract LotteryLucky32 {
 
     function finishGame() external onlyMember noReentrace {
         require(block.timestamp > deadLine, "Deadline has not passed.");
+        revealWinNumber();
+        emit RevealSecretNumber("Secret number is revealed.", winNumber, block.timestamp);
         gameStatus = GameStatus.FINISHED;
         uint256 percentToOwner = (address(this).balance/100) * ownerPercent;
-        (bool success, ) = owner.call{value: percentToOwner, gas: 10000}("");
+        (bool success, ) = owner.call{value: percentToOwner, gas: 50000}("");
         if (!success) {
             revert("Transfer failed");
         }
         uint256 percentToWinners = address(this).balance / winners.length;
         for (uint256 i = 0; i < winners.length; i++) {
             if (winners[i] != address(0) || players[winners[i]].isWinner == false) {continue;}
+            players[winners[i]].isWinner = false;
             (bool success2, ) = winners[i].call{value: percentToWinners, gas: 10000}("");
             if (!success2) {
-                revert("Transfer failed");
-            } else {
-                players[winners[i]].isWinner = false;
+                players[winners[i]].isWinner = true;
+                continue;
             }
         }
     }
