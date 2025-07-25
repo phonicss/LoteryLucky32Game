@@ -39,6 +39,7 @@ contract LotteryLucky32 {
     event TicketPurches(string _message, address indexed player, uint256 timeStamp);
     event Refunded(string _message, address indexed player, uint256 timestamp);
     event RevealSecretNumber(string _message, uint256 secretNumber, uint256 timeStamp);
+    event GameFinishNoWinners(string _message, uint256 timeStamp);
 
     //Enum. Game statuses. 
     enum GameStatus {INACTIVE, ACTIVE, PAUSED, FINISHED, TERMINATED}
@@ -166,7 +167,7 @@ contract LotteryLucky32 {
 
     function buyTicket(uint256 myNumber) external payable noReentrace gameIsActive {
         //Check requirments 
-        require(msg.sender != address(0));
+        require(msg.sender != address(0), "Address is not valid.");
         require(myNumber >= 1 && myNumber <= 32, "Number should be between 1 and 32.");
         require(deadLine > block.timestamp, "Deadline has passed.");
         require(msg.value == ticketPrice, "Price should be equal to ticket price.");
@@ -216,6 +217,11 @@ contract LotteryLucky32 {
 
     function finishGame() external onlyMember noReentrace {
         require(block.timestamp > deadLine, "Deadline has not passed.");
+        if(winners.length == 0) {
+            gameStatus = GameStatus.TERMINATED;
+            emit GameFinishNoWinners("There is no winners in this game. Game is terminated. You can refund.", block.timestamp);
+        }
+        require(winners.length > 0, "There is not winners.");
         revealWinNumber();
         emit RevealSecretNumber("Secret number is revealed.", winNumber, block.timestamp);
         gameStatus = GameStatus.FINISHED;
