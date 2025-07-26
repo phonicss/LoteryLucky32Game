@@ -11,23 +11,17 @@ contract LotteryLucky32 {
     uint256 public ticketPrice;
     uint256 private secretNumber;
     uint256 public winNumber;
+    bool public isSecretNumberReveald;
     uint256 public ownerPercent;
-    uint256 public howManyTicketsAllowed;
     uint256 public deadLine;
     bool private locked;
     bool private pausedOnce;
     uint256 public pauseDeadLine;
-    uint256 public ticketsSold;
     uint256 public MIN_TICKET_PRICE = 0.1 ether;
     uint256 public MAX_TICKET_PRICE = 1 ether;
 
-    struct PlayerTickets {
-        uint256[] myLuckyNumbers;
-        uint256 numberOfTickets;
-        bool isWinner;
-    }
-
-    mapping(address => PlayerTickets) public players;
+    mapping(address => uint256) public playerLuckyNumber;
+    address[] players;
     address[] winners;
 
     //Events
@@ -83,8 +77,18 @@ contract LotteryLucky32 {
         _;
     }
 
+    modifier gameIsFinished() {
+        require(gameStatus == GameStatus.FINISHED, "Game is not FINISHED.");
+        _;
+    }
+
     modifier onlyMember() {
-        require(players[msg.sender].numberOfTickets > 0 || msg.sender == owner, "Only players or owner.");
+        require(playerLuckyNumber[msg.sender] != 0 || msg.sender == owner, "Only players or owner.");
+        _;
+    }
+
+    modifier secretNumberMustBeRevealed() {
+        require(isSecretNumberReveald == true, "Secret number must be reveladed first.");
         _;
     }
 
@@ -92,7 +96,6 @@ contract LotteryLucky32 {
         string memory _gameName,
         string memory _description,
         uint256 _ownerPercent,
-        uint256 _howManyTicketsAllowed,
         uint256 _ticketPrice,
         uint256 _deadLine
     ) {
@@ -114,7 +117,6 @@ contract LotteryLucky32 {
         gameName = _gameName;
         description = _description;
         ownerPercent = _ownerPercent;
-        howManyTicketsAllowed = _howManyTicketsAllowed;
         ticketPrice = _ticketPrice;
         deadLine = block.timestamp + (_deadLine * 1 days);
         pausedOnce = false;
@@ -168,47 +170,43 @@ contract LotteryLucky32 {
     function buyTicket(uint256 myNumber) external payable noReentrace gameIsActive {
         //Check requirments 
         require(msg.sender != address(0), "Address is not valid.");
+        require(playerLuckyNumber[msg.sender] != 0, "You already have a ticket.");
         require(myNumber >= 1 && myNumber <= 32, "Number should be between 1 and 32.");
         require(deadLine > block.timestamp, "Deadline has passed.");
         require(msg.value == ticketPrice, "Price should be equal to ticket price.");
-        PlayerTickets storage player = players[msg.sender];
-        require(player.numberOfTickets <= howManyTicketsAllowed, "You have reached the limit of tickets.");
-
-        //check if your number equal to win number
-        if (!player.isWinner) {
-            if (myNumber == winNumber) {
-                player.isWinner = true;
-                winners.push(msg.sender);
-            }           
-        }
-
-        player.myLuckyNumbers.push(myNumber);
-        player.numberOfTickets++;
-        ticketsSold++;
+        playerLuckyNumber[msg.sender] = myNumber;
+        players.push(msg.sender);
         emit TicketPurches("Ticket has been purchesd.", msg.sender, block.timestamp);  
     }
 
-    function showMyTickets() external onlyMember view returns (uint256[] memory) {
-        PlayerTickets storage player = players[msg.sender];
-        return player.myLuckyNumbers;
+    function showMyTicket() external onlyMember view returns (uint256) {
+        return playerLuckyNumber[msg.sender];
     }
 
     function ShowTicketsSold() external view returns (uint256) {
-        return ticketsSold;
+        return players.length;
     }
 
     function revealWinNumber() internal returns (uint256) {
+    require(msg.sender != address(0), "Invalid address.");
+    require(isSecretNumberReveald == false, "Secret number is already revealeded.");
     winNumber = (secretNumber % 32) + 1;
+    isSecretNumberReveald = true;
+    emit RevealSecretNumber("Secret number is revealed.", winNumber, block.timestamp);
     return winNumber;
-}
+    }
+
+    function showWinNumber() public view secretNumberMustBeRevealed returns (uint256) {
+        return winNumber;
+    } 
 
     function refund() external gameIsTerminated onlyMember {
         require(msg.sender != address(0), "Invalid address.");
-        uint256 myTickets = players[msg.sender].numberOfTickets;
-        players[msg.sender].numberOfTickets = 0;
-        (bool success, ) = msg.sender.call{value: myTickets*ticketPrice, gas: 50000}("");
+        uint256 yourLuckyNumber = playerLuckyNumber[msg.sender];
+        playerLuckyNumber[msg.sender] = 0;
+        (bool success, ) = msg.sender.call{value: ticketPrice, gas: 50000}("");
         if (!success) {
-            players[msg.sender].numberOfTickets = myTickets;
+            playerLuckyNumber[msg.sender] = yourLuckyNumber;
             revert("Transfer failed");
         } else {
             emit Refunded("Your tickets are refunded.", msg.sender, block.timestamp);
@@ -217,13 +215,19 @@ contract LotteryLucky32 {
 
     function finishGame() external onlyMember noReentrace {
         require(block.timestamp > deadLine, "Deadline has not passed.");
+        revealWinNumber();
+        for (uint256 i = 0; i < players.length; i++) {
+            address player = players[i];
+            if (playerLuckyNumber[player] == winNumber) {
+                winners.push(player);
+            }
+        }
+
         if(winners.length == 0) {
             gameStatus = GameStatus.TERMINATED;
             emit GameFinishNoWinners("There is no winners in this game. Game is terminated. You can refund.", block.timestamp);
         }
-        require(winners.length > 0, "There is not winners.");
-        revealWinNumber();
-        emit RevealSecretNumber("Secret number is revealed.", winNumber, block.timestamp);
+        require(winners.length > 0, "There is no winners.");
         gameStatus = GameStatus.FINISHED;
         uint256 percentToOwner = (address(this).balance/100) * ownerPercent;
         (bool success, ) = owner.call{value: percentToOwner, gas: 50000}("");
@@ -232,14 +236,13 @@ contract LotteryLucky32 {
         }
         uint256 percentToWinners = address(this).balance / winners.length;
         for (uint256 i = 0; i < winners.length; i++) {
-            if (winners[i] != address(0) || players[winners[i]].isWinner == false) {continue;}
-            players[winners[i]].isWinner = false;
-            (bool success2, ) = winners[i].call{value: percentToWinners, gas: 10000}("");
+            uint256 yourLuckyNumber = playerLuckyNumber[winners[i]];
+            playerLuckyNumber[winners[i]] = 0;
+            (bool success2, ) = winners[i].call{value: percentToWinners, gas: 50000}("");
             if (!success2) {
-                players[winners[i]].isWinner = true;
+                playerLuckyNumber[winners[i]] = yourLuckyNumber;
                 continue;
             }
         }
     }
-
 }
