@@ -106,13 +106,6 @@ contract LotteryLucky32 {
         require(_ticketPrice >= MIN_TICKET_PRICE && _ticketPrice <= MAX_TICKET_PRICE, "Ticket price should be 0.1 ETH and less 1 ETH (In clussive).");
         require(_deadLine >= 1 && _deadLine <= 32, "Deadline should be no less then 1 day and no more then 32 days.");
 
-        secretNumber = uint256(keccak256(abi.encodePacked(
-            block.difficulty,
-            block.timestamp,
-            block.prevrandao,
-            owner
-        )));
-        
         owner = msg.sender;
         gameName = _gameName;
         description = _description;
@@ -170,7 +163,7 @@ contract LotteryLucky32 {
     function buyTicket(uint256 myNumber) external payable noReentrace gameIsActive {
         //Check requirments 
         require(msg.sender != address(0), "Address is not valid.");
-        require(playerLuckyNumber[msg.sender] != 0, "You already have a ticket.");
+        require(playerLuckyNumber[msg.sender] == 0, "You already have a ticket.");
         require(myNumber >= 1 && myNumber <= 32, "Number should be between 1 and 32.");
         require(deadLine > block.timestamp, "Deadline has passed.");
         require(msg.value == ticketPrice, "Price should be equal to ticket price.");
@@ -190,6 +183,12 @@ contract LotteryLucky32 {
     function revealWinNumber() internal returns (uint256) {
     require(msg.sender != address(0), "Invalid address.");
     require(isSecretNumberReveald == false, "Secret number is already revealeded.");
+    secretNumber = uint256(keccak256(abi.encodePacked(
+        block.difficulty,
+        block.timestamp,
+        block.prevrandao,
+        owner
+    )));
     winNumber = (secretNumber % 32) + 1;
     isSecretNumberReveald = true;
     emit RevealSecretNumber("Secret number is revealed.", winNumber, block.timestamp);
@@ -213,7 +212,7 @@ contract LotteryLucky32 {
         }
     }
 
-    function finishGame() external onlyMember noReentrace {
+    function finishGame() external gameIsActive onlyMember noReentrace {
         require(block.timestamp > deadLine, "Deadline has not passed.");
         revealWinNumber();
         for (uint256 i = 0; i < players.length; i++) {
