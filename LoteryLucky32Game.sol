@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity ^0.8.0;
 
+import "@chainlink/contracts/src/v0.8/VRFConsumerBase.sol";
 
+contract LotteryLucky32 is VRFConsumerBase {
 
-contract LotteryLucky32 {
+    bytes32 internal keyHash; // Идентификатор Oracle
+    uint256 internal fee;     // Плата в LINK (например, 0.1 LINK)
+    uint256 public randomResult;
 
     address public immutable owner;
     string public gameName;
@@ -98,7 +102,11 @@ contract LotteryLucky32 {
         uint256 _ownerPercent,
         uint256 _ticketPrice,
         uint256 _deadLine
-    ) {
+    ) 
+        VRFConsumerBase(0x6168499c0cFfCaCD319c818142124B7A15E857ab,0x01BE23585060835E02B77ef475b0Cc51aA1e0709) {
+            keyHash = 0xd89b2bf150e3b9e13446986e571fb9cab24b13cea0a43ea20a6049a85cc807cc;
+            fee = 0.1 * 10**18;
+
         require(msg.sender != address(0), "Invalid address.");
         require(bytes(_gameName).length > 0, "Name should not be empty.");
         require(bytes(_description).length > 0, "Description should not be empty.");
@@ -125,6 +133,11 @@ contract LotteryLucky32 {
         require(gameStatus == GameStatus.INACTIVE, "Game should be inactive to start.");
         gameStatus = GameStatus.ACTIVE;
         emit GameStarted("Game hasstarted", block.timestamp, deadLine);
+    }
+
+    function requestRandomNumber() public returns (bytes32 requestId) {
+    require(LINK.balanceOf(address(this)) >= fee, "Not enough LINK");
+    return requestRandomness(keyHash, fee);
     }
 
     function gamePause(uint256 daysPaused) public onlyOwner gameCouldBePausedOnce {
@@ -180,19 +193,30 @@ contract LotteryLucky32 {
         return players.length;
     }
 
-    function revealWinNumber() internal returns (uint256) {
-    require(msg.sender != address(0), "Invalid address.");
-    require(isSecretNumberReveald == false, "Secret number is already revealeded.");
-    secretNumber = uint256(keccak256(abi.encodePacked(
-        block.difficulty,
-        block.timestamp,
-        block.prevrandao,
-        owner
-    )));
-    winNumber = (secretNumber % 32) + 1;
-    isSecretNumberReveald = true;
-    emit RevealSecretNumber("Secret number is revealed.", winNumber, block.timestamp);
-    return winNumber;
+    function fulfillRandomness(bytes32 requestId, uint256 randomness) internal override {
+        require(msg.sender != address(0), "Invalid address.");
+        require(isSecretNumberReveald == false, "Secret number is already revealeded.");
+        randomResult = randomness;
+        winNumber = (randomResult % 32) + 1; // generate random number from 1 to 32
+        isSecretNumberReveald = true;
+        
+        emit RevealSecretNumber("Secret number is revealed.", winNumber, block.timestamp);
+            
+        // determine the winners
+        for (uint256 i = 0; i < players.length; i++) {
+            if (playerLuckyNumber[players[i]] == winNumber) {
+                winners.push(players[i]);
+            }
+        }
+
+        if (winners.length == 0) {
+            gameStatus = GameStatus.TERMINATED;
+            emit GameFinishNoWinners("No winners. Game terminated.", block.timestamp);
+            return;
+        }
+
+        gameStatus = GameStatus.FINISHED;
+        
     }
 
     function showWinNumber() public view secretNumberMustBeRevealed returns (uint256) {
@@ -213,8 +237,9 @@ contract LotteryLucky32 {
     }
 
     function finishGame() external gameIsActive onlyMember noReentrace {
-        require(block.timestamp > deadLine, "Deadline has not passed.");
-        revealWinNumber();
+        require(block.timestamp > deadLine, "Deadline not passed.");
+        require(!isSecretNumberReveald, "Already revealed");
+        requestRandomNumber();
         for (uint256 i = 0; i < players.length; i++) {
             address player = players[i];
             if (playerLuckyNumber[player] == winNumber) {
