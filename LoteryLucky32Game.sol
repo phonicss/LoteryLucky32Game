@@ -5,8 +5,8 @@ import "@chainlink/contracts/src/v0.8/VRFConsumerBase.sol";
 
 contract LotteryLucky32 is VRFConsumerBase {
 
-    bytes32 internal keyHash; // Идентификатор Oracle
-    uint256 internal fee;     // Плата в LINK (например, 0.1 LINK)
+    bytes32 internal keyHash; // oracle
+    uint256 internal fee;     // fee
     uint256 public randomResult;
 
     address public immutable owner;
