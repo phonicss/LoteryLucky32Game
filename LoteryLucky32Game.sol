@@ -5,8 +5,8 @@ import "@chainlink/contracts/src/v0.8/VRFConsumerBase.sol";
 
 contract LotteryLucky32 is VRFConsumerBase {
 
-    bytes32 internal keyHash; // Идентификатор Oracle
-    uint256 internal fee;     // Плата в LINK (например, 0.1 LINK)
+    bytes32 internal keyHash; // id Oracle
+    uint256 internal fee;     // fee in LINK
     uint256 public randomResult;
 
     address public immutable owner;
@@ -17,6 +17,7 @@ contract LotteryLucky32 is VRFConsumerBase {
     uint256 public winNumber;
     bool public isSecretNumberReveald;
     uint256 public ownerPercent;
+    uint256 public percentToWinners;
     uint256 public deadLine;
     bool private locked;
     bool private pausedOnce;
@@ -36,6 +37,7 @@ contract LotteryLucky32 is VRFConsumerBase {
     event GameDeadLineChange(string _message, uint256 newDeadLine, uint256 timeStamp);
     event TicketPurches(string _message, address indexed player, uint256 timeStamp);
     event Refunded(string _message, address indexed player, uint256 timestamp);
+    event PrizeClaimed(string _message, address indexed player, uint256 timestamp);
     event RevealSecretNumber(string _message, uint256 secretNumber, uint256 timeStamp);
     event GameFinishNoWinners(string _message, uint256 timeStamp);
 
@@ -214,25 +216,15 @@ contract LotteryLucky32 is VRFConsumerBase {
         } else {
             gameStatus = GameStatus.FINISHED;
             uint256 percentToOwner = (address(this).balance/100) * ownerPercent;
-            (bool success, ) = owner.call{value: percentToOwner, gas: 50000}("");
+            (bool success, ) = owner.call{value: percentToOwner, gas: 100000}("");
             if (!success) {
                 revert("Transfer failed");
             }
 
-            uint256 percentToWinners = address(this).balance / winners.length;
-            for (uint256 i = 0; i < winners.length; i++) {
-                uint256 yourLuckyNumber = playerLuckyNumber[winners[i]];
-                playerLuckyNumber[winners[i]] = 0;
-                (bool success2, ) = winners[i].call{value: percentToWinners, gas: 50000}("");
-                if (!success2) {
-                    playerLuckyNumber[winners[i]] = yourLuckyNumber;
-                    continue;
-                }
-            }  
+            percentToWinners = address(this).balance / winners.length;
+            
         }
 
-       
-  
     }
 
     function showWinNumber() public view secretNumberMustBeRevealed returns (uint256) {
@@ -243,12 +235,26 @@ contract LotteryLucky32 is VRFConsumerBase {
         require(msg.sender != address(0), "Invalid address.");
         uint256 yourLuckyNumber = playerLuckyNumber[msg.sender];
         playerLuckyNumber[msg.sender] = 0;
-        (bool success, ) = msg.sender.call{value: ticketPrice, gas: 50000}("");
+        (bool success, ) = msg.sender.call{value: ticketPrice, gas: 100000}("");
         if (!success) {
             playerLuckyNumber[msg.sender] = yourLuckyNumber;
-            revert("Transfer failed");
+            revert("Transfer failed.");
         } else {
             emit Refunded("Your tickets are refunded.", msg.sender, block.timestamp);
+        }
+    }
+
+    function claimPrize() external gameIsFinished onlyMember {
+        require(msg.sender != address(0), "Invalid address.");
+        require(playerLuckyNumber[msg.sender] == winNumber, "You are not a winner.");
+        uint256 yourLuckyNumber = playerLuckyNumber[msg.sender];
+        playerLuckyNumber[msg.sender] = 0;
+        (bool success, ) = msg.sender.call{value: percentToWinners, gas: 100000 }("");
+        if(!success) {
+            playerLuckyNumber[msg.sender] = yourLuckyNumber;
+            revert("Transfer failed.");
+        } else {
+            emit PrizeClaimed("Prize claimed by winner,", msg.sender, block.timestamp);
         }
     }
 
