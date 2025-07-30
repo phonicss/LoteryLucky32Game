@@ -216,7 +216,7 @@ contract LotteryLucky32 is VRFConsumerBase {
         } else {
             gameStatus = GameStatus.FINISHED;
             uint256 percentToOwner = (address(this).balance/100) * ownerPercent;
-            (bool success, ) = owner.call{value: percentToOwner, gas: 100000}("");
+            (bool success, ) = owner.call{value: percentToOwner}("");
             if (!success) {
                 revert("Transfer failed");
             }
@@ -235,7 +235,7 @@ contract LotteryLucky32 is VRFConsumerBase {
         require(msg.sender != address(0), "Invalid address.");
         uint256 yourLuckyNumber = playerLuckyNumber[msg.sender];
         playerLuckyNumber[msg.sender] = 0;
-        (bool success, ) = msg.sender.call{value: ticketPrice, gas: 100000}("");
+        (bool success, ) = msg.sender.call{value: ticketPrice}("");
         if (!success) {
             playerLuckyNumber[msg.sender] = yourLuckyNumber;
             revert("Transfer failed.");
@@ -249,7 +249,7 @@ contract LotteryLucky32 is VRFConsumerBase {
         require(playerLuckyNumber[msg.sender] == winNumber, "You are not a winner.");
         uint256 yourLuckyNumber = playerLuckyNumber[msg.sender];
         playerLuckyNumber[msg.sender] = 0;
-        (bool success, ) = msg.sender.call{value: percentToWinners, gas: 100000 }("");
+        (bool success, ) = msg.sender.call{value: percentToWinners}("");
         if(!success) {
             playerLuckyNumber[msg.sender] = yourLuckyNumber;
             revert("Transfer failed.");
