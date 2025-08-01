@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "@chainlink/contracts/src/v0.8/VRFConsumerBase.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract LotteryLucky32 is VRFConsumerBase {
 
@@ -22,11 +23,15 @@ contract LotteryLucky32 is VRFConsumerBase {
     bool private locked;
     bool private pausedOnce;
     uint256 public pauseDeadLine;
-    uint256 public constant MIN_TICKET_PRICE = 0.1 ether;
-    uint256 public constant MAX_TICKET_PRICE = 1 ether;
+    uint256 public constant MIN_TICKET_PRICE = 0.01 ether; // 0.01 MATIC
+    uint256 public constant MAX_TICKET_PRICE = 100 ether; // 100 MATIC
 
+
+    //Mapping player's address to the number betwen 1 - 32
     mapping(address => uint256) public playerLuckyNumber;
+    //Array of player's addresses
     address[] players;
+    //Array of winners
     address[] winners;
 
     //Events
@@ -73,6 +78,7 @@ contract LotteryLucky32 is VRFConsumerBase {
         _;
     }
 
+    //Game could be paused only once
     modifier gameCouldBePausedOnce() {
         require(pausedOnce == false, "Game can be paused only once.");
         _;
@@ -105,15 +111,17 @@ contract LotteryLucky32 is VRFConsumerBase {
         uint256 _ticketPrice,
         uint256 _deadLine
     ) 
-        VRFConsumerBase(0x6168499c0cFfCaCD319c818142124B7A15E857ab,0x01BE23585060835E02B77ef475b0Cc51aA1e0709) {
-            keyHash = 0xd89b2bf150e3b9e13446986e571fb9cab24b13cea0a43ea20a6049a85cc807cc;
-            fee = 0.1 * 10**18;
+        VRFConsumerBase( 0xAE975071Be8F8eE67addBC1A82488F1C24858067, // VRF Coordinator (Polygon)
+        0xb0897686c545045aFc77CF20eC7A532E3120E0F1  // LINK Token (Polygon)
+        ) {
+            keyHash = 0xd729dc84e21ae57ffb6be0053bf2b0668aa2aaf300a2a7b2ddf7dc0bb6e875a8; // KeyHash (Polygon);
+            fee = fee = 0.0005 * 10**18; // 0.0005 LINK
 
         require(msg.sender != address(0), "Invalid address.");
         require(bytes(_gameName).length > 0, "Name should not be empty.");
         require(bytes(_description).length > 0, "Description should not be empty.");
         require(_ownerPercent >= 1 && _ownerPercent <= 10, "Owner percent should be between 1 and 10.");
-        require(_ticketPrice >= MIN_TICKET_PRICE && _ticketPrice <= MAX_TICKET_PRICE, "Ticket price should be 0.1 ETH and less 1 ETH (In clussive).");
+        require(_ticketPrice >= MIN_TICKET_PRICE && _ticketPrice <= MAX_TICKET_PRICE, "Ticket price should be 0.01 MATIC and less 1 MATIC (In clussive).");
         require(_deadLine >= 1 && _deadLine <= 32, "Deadline should be no less then 1 day and no more then 32 days.");
 
         owner = msg.sender;
@@ -131,16 +139,17 @@ contract LotteryLucky32 is VRFConsumerBase {
         
     }
 
+
+
     function startGame() public onlyOwner gameIsInactive {
         require(gameStatus == GameStatus.INACTIVE, "Game should be inactive to start.");
         gameStatus = GameStatus.ACTIVE;
         emit GameStarted("Game hasstarted", block.timestamp, deadLine);
     }
 
-    function requestRandomNumber() public returns (bytes32 requestId) {
-    require(LINK.balanceOf(address(this)) >= fee, "Not enough LINK");
-    return requestRandomness(keyHash, fee);
-    }
+    /**************************************************************************/
+    /****************************** PAUSE AND UNPAUSE GAME ********************/
+    /**************************************************************************/
 
     function gamePause(uint256 daysPaused) public onlyOwner gameCouldBePausedOnce {
         require(daysPaused >= 1 && daysPaused <= 3, "Days paused should be between 1 and 3.");
@@ -159,6 +168,10 @@ contract LotteryLucky32 is VRFConsumerBase {
         emit GameIsUnPaused("Game is unpaused", block.timestamp);
     }
 
+    /**************************************************************************/
+    /****************************** EXTEND AND TERMINATE GAME *****************/
+    /**************************************************************************/
+
     function extendDeadLine(uint daysToExtend) public onlyOwner gameIsPaused {
         uint256 newDeadLine = deadLine + (daysToExtend * 1 days);
         require(newDeadLine > block.timestamp, "New deadline should be in the future.");
@@ -174,6 +187,10 @@ contract LotteryLucky32 is VRFConsumerBase {
     function showBalance() external view returns (uint256) {
         return address(this).balance;
     }
+
+    /**************************************************************************/
+    /****************************** BUY TICKET AND OPTIONS ********************/
+    /**************************************************************************/
 
     function buyTicket(uint256 myNumber) external payable noReentrace gameIsActive {
         //Check requirments 
@@ -195,6 +212,19 @@ contract LotteryLucky32 is VRFConsumerBase {
         return players.length;
     }
 
+
+    /************************MAIN LOGIC*****************************************/
+    /************************ORACLE Chainlink VRF to get Random number*********/
+    /************************GENERATE AND REVEAL WIN NUMBER ******************/
+    /*********PAY PERCENT TO OWNER IF THERE IS ATLEST ONE WINNER*************/
+
+    //This function request random number from Chainlink VRF
+    function requestRandomNumber() public returns (bytes32 requestId) {
+    require(LINK.balanceOf(address(this)) >= fee, "Not enough LINK");
+    return requestRandomness(keyHash, fee);
+    }
+
+    //This function is called by Chainlink VRF Coordinator only
     function fulfillRandomness(bytes32 requestId, uint256 randomness) internal override {
         require(isSecretNumberReveald == false, "Secret number is already revealeded.");
         isSecretNumberReveald = true;
@@ -203,7 +233,7 @@ contract LotteryLucky32 is VRFConsumerBase {
         
         emit RevealSecretNumber("Secret number is revealed.", winNumber, block.timestamp);
             
-        // determine the winners
+        // Determine the winners
         for (uint256 i = 0; i < players.length; i++) {
             if (playerLuckyNumber[players[i]] == winNumber) {
                 winners.push(players[i]);
@@ -227,9 +257,23 @@ contract LotteryLucky32 is VRFConsumerBase {
 
     }
 
+    //FINISH GAME
+    function finishGame() external gameIsActive onlyMember noReentrace {
+        require(LINK.balanceOf(address(this)) >= fee, "Not enough LINK");
+        require(block.timestamp > deadLine, "Deadline not passed.");
+        require(!isSecretNumberReveald, "Already revealed");
+        requestRandomNumber();
+       
+    }
+
+    //Show win number
     function showWinNumber() public view secretNumberMustBeRevealed returns (uint256) {
         return winNumber;
     } 
+
+    /*****************REFUND IF GAME TERMINATED OR NO WINNERS*************/
+    /*****************CLAIM YOUR PRIZE IF YOU WON************************/
+    /*****************CLAIM UNUSED LINK*********************************/
 
     function refund() external gameIsTerminated onlyMember {
         require(msg.sender != address(0), "Invalid address.");
@@ -258,10 +302,11 @@ contract LotteryLucky32 is VRFConsumerBase {
         }
     }
 
-    function finishGame() external gameIsActive onlyMember noReentrace {
-        require(block.timestamp > deadLine, "Deadline not passed.");
-        require(!isSecretNumberReveald, "Already revealed");
-        requestRandomNumber();
-       
+    //Withdraw the rest of LINK
+    function withdrawLINK() external onlyOwner {
+        IERC20 linkToken = IERC20(0xb0897686c545045aFc77CF20eC7A532E3120E0F1);
+        bool success = linkToken.transfer(owner, linkToken.balanceOf(address(this)));
+        require(success, "LINK transfer failed");
     }
+  
 }
