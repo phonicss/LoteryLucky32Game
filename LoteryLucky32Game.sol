@@ -22,8 +22,8 @@ contract LotteryLucky32 is VRFConsumerBase {
     bool private locked;
     bool private pausedOnce;
     uint256 public pauseDeadLine;
-    uint256 public MIN_TICKET_PRICE = 0.1 ether;
-    uint256 public MAX_TICKET_PRICE = 1 ether;
+    uint256 public constant MIN_TICKET_PRICE = 0.1 ether;
+    uint256 public constant MAX_TICKET_PRICE = 1 ether;
 
     mapping(address => uint256) public playerLuckyNumber;
     address[] players;
