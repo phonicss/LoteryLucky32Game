@@ -83,6 +83,7 @@ describe("Lottery Lucky 32 System", function() {
             expect(lottery.connect(player1).buyTicket(33)).to.be.rejectedWith("");
             expect(lottery.connect(player1).buyTicket(-1)).to.be.rejectedWith("");
             expect(lottery.connect(player1).buyTicket(25,{ value: ethers.parseEther("1.0")})).to.be.rejectedWith("");
+            await lottery.connect(player1).buyTicket(25,{ value: ethers.parseEther("0.1")});
         })
     })
 
@@ -99,8 +100,15 @@ describe("Lottery Lucky 32 System", function() {
 
     describe("Refund", () => {
         it("Should allowed player to refund", async function() {
-            
-            expect(lottery.connect(player1).refund());
+            expect(await lottery.showCurrentGameStatus()).to.equal(4); // 4 = TERMINATED
+            let info = await lottery.playerLuckyNumber(player1.address);
+            console.log(`player1 number in map is: ${info.toString()}`);
+            console.log(`player1 address: ${player1.address}`);
+            await lottery.connect(player1).refund();
+            info = await lottery.playerLuckyNumber(player1.address);
+            console.log(`player1 number in map is: ${info.toString()}`);
+            expect(lottery.connect(player1).refund()).to.be.rejectedWith("");
+            expect(lottery.connect(player2).refund()).to.be.rejectedWith("");
         })
     })
 
